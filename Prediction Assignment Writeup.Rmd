@@ -1,0 +1,138 @@
+---
+title: "Prediction Assignment Writeup"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+The goal of the project was to *predict the manner in which they did the exercise using different models*. **This is the report about this prediction assignment.**
+
+# Data Processing
+
+## A-Loading required packages
+
+First, we import all the libraries needed for the coming analysis.
+```{r library, warning=FALSE, message=FALSE}
+#import libraries
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(rattle)
+library(knitr)
+library(randomForest)
+set.seed(12345)
+```
+## B-Loading Data
+
+We take the data on which we will work on, and we read the datasets.
+```{r URL}
+# URL to DL for the datasets
+Training <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+Testing  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+# DL the datasets
+training <- read.csv(url(Training))
+testing  <- read.csv(url(Testing))
+```
+## C-Data Cleaning
+
+Using the training dataset, we will split it into 2 subdataset : another training and testing
+
+```{r partition}
+# create a partition with the training dataset 
+partition  <- createDataPartition(training$classe, p=0.7, list=FALSE)
+TrainSet <- training[partition, ]
+TestSet  <- training[-partition, ]
+```
+
+Now it's time to clear the datasets created. Indeed, there must be some variables with plenty of NA that need to be removed with the cleaning process. Variables with near zero variance and ID variables will also be removed from the dataset.
+
+```{r cleaning}
+#cleaning process of nearly zero variance
+NZV<-nearZeroVar(TrainSet)
+TrainSet<-TrainSet[, -NZV]
+TestSet<-TestSet[, -NZV]
+
+#removing the NA variables
+AllNA    <- sapply(TrainSet, function(x) mean(is.na(x))) > 0.95
+TrainSet <- TrainSet[, AllNA==FALSE]
+TestSet  <- TestSet[, AllNA==FALSE]
+
+TrainSet <- TrainSet[, -(1:5)]
+TestSet  <- TestSet[, -(1:5)]
+
+#checking nb of variables
+dim(TrainSet)
+dim(TestSet)
+```
+
+We are now left with 54 variables for the analysis.
+
+## D-Correlation Analysis
+
+The higly correlated variables are shown in dark colors in the graph.
+
+```{r correlation}
+#correlation analysis
+corMatrix <- cor(TrainSet[, -54])
+corrplot(corMatrix, order = "FPC", method = "color", type = "upper", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+
+# Application of Machine Learning Algorithm
+
+Two algorithms are applied to the dataset:
+*Random Forest
+*Decision Tree
+
+The models are first trained, then they are used with the validation dataset. And at the end, a confusion matrix is produced to check the accuracy of the models applied on the validation dataset.
+
+## A-Random Forest
+
+```{r random forest}
+# Random forest model fit
+set.seed(12345)
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modFitRandForest <- train(classe ~ ., data=TrainSet, method="rf", trControl=controlRF)
+modFitRandForest$finalModel
+
+# prediction on Test dataset
+predictRandForest <- predict(modFitRandForest, newdata=TestSet)
+confMatRandForest <- confusionMatrix(predictRandForest, TestSet$classe)
+confMatRandForest
+
+# plot matrix results for Random forest
+plot(confMatRandForest$table, col = confMatRandForest$byClass, 
+     main = paste("Random Forest - Accuracy =", round(confMatRandForest$overall['Accuracy'], 3)))
+```
+
+## B-Decision trees
+```{r decision trees}
+# Decision trees model
+set.seed(12345)
+modFitDecTree <- rpart(classe ~ ., data=TrainSet, method="class")
+fancyRpartPlot(modFitDecTree)
+
+# prediction on Test dataset
+predictDecTree <- predict(modFitDecTree, newdata=TestSet, type="class")
+confMatDecTree <- confusionMatrix(predictDecTree, TestSet$classe)
+confMatDecTree
+
+# plot matrix results for Decision tree
+plot(confMatDecTree$table, col = confMatDecTree$byClass, main = paste("Decision Tree - Accuracy =", round(confMatDecTree$overall['Accuracy'], 3)))
+```
+
+# Data Validation
+
+The accuracy of the 2 regression modeling methods used are:
+*Random forest:0.999
+*Decision tree:0.734
+
+The random forest model being more accurate, we'll use this model for the course project prediction quiz.
